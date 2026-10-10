@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { 
   Shield, UserPlus, Users, DollarSign, FileText, CheckCircle, 
   Clock, ArrowLeft, AlertCircle, Check, Search, Lock, UserCheck, 
-  Printer, ArrowUpRight
+  Printer, ArrowUpRight, RefreshCw
 } from 'lucide-react';
 
 export const AdminPage: React.FC = () => {
@@ -15,7 +15,8 @@ export const AdminPage: React.FC = () => {
     updateInvoiceStatus, 
     setActiveView, 
     switchPersona,
-    setActiveInvoiceForPrint 
+    setActiveInvoiceForPrint,
+    syncWithSupabase
   } = useApp();
 
   const [newEmail, setNewEmail] = useState('');
@@ -124,13 +125,24 @@ export const AdminPage: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={() => setActiveView('dashboard')}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Switch to User View
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => syncWithSupabase()}
+            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs transition-colors flex items-center gap-1.5"
+            title="Refresh & sync data with Supabase Cloud Database"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+            <span className="hidden sm:inline">Sync Cloud</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView('dashboard')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Switch to User View
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards Grid */}

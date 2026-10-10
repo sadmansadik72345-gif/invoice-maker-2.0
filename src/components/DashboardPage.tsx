@@ -4,7 +4,7 @@ import { InvoiceItem, Invoice, InvoiceStatus } from '../types';
 import { 
   Plus, Trash2, Printer, CheckCircle, Clock, FileText, 
   Search, AlertCircle, Copy, Check, Edit3, Sparkles, 
-  RotateCcw, DollarSign 
+  RotateCcw, DollarSign, RefreshCw 
 } from 'lucide-react';
 
 const PRESET_TEMPLATES = [
@@ -52,7 +52,8 @@ export const DashboardPage: React.FC = () => {
     editingInvoice,
     setEditingInvoice,
     setActiveInvoiceForPrint,
-    diagnostics 
+    diagnostics,
+    syncWithSupabase 
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'create' | 'history'>('create');
@@ -245,28 +246,39 @@ export const DashboardPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Segmented Controls */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+        {/* Segmented Controls & Cloud Sync */}
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setActiveTab('create')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-              activeTab === 'create'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => syncWithSupabase()}
+            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs transition-colors flex items-center gap-1.5"
+            title="Refresh & sync data with Supabase Cloud Database"
           >
-            {editingId ? 'Editing Invoice' : 'Create Invoice'}
+            <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+            <span className="hidden sm:inline">Sync Cloud</span>
           </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-              activeTab === 'history'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Past Invoices ({userInvoices.length})
-          </button>
+
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+            <button
+              onClick={() => setActiveTab('create')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                activeTab === 'create'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {editingId ? 'Editing Invoice' : 'Create Invoice'}
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                activeTab === 'history'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Past Invoices ({userInvoices.length})
+            </button>
+          </div>
         </div>
       </div>
 

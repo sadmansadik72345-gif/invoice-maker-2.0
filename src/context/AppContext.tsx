@@ -12,7 +12,8 @@ interface AppContextType {
   invoices: Invoice[];
   activeView: 'dashboard' | 'admin' | 'login' | 'code' | 'schema';
   setActiveView: (view: 'dashboard' | 'admin' | 'login' | 'code' | 'schema') => void;
-  signIn: (email: string, role?: 'admin' | 'user') => boolean;
+  signIn: (identifier: string, passwordInput: string) => { success: boolean; message?: string };
+  signUp: (email: string, passwordInput: string, fullName: string) => Promise<{ success: boolean; message?: string }>;
   signOut: () => void;
   switchPersona: (email: string) => void;
   createOrUpdateInvoice: (invoiceData: Omit<Invoice, 'id' | 'created_at'> & { id?: string }) => Promise<{ success: boolean; invoice: Invoice; message: string }>;
@@ -38,6 +39,7 @@ const INITIAL_USERS: UserProfile[] = [
     email: 'admin@invoicepulse.dev',
     full_name: 'Arthur Vance',
     role: 'admin',
+    password: 'admin123',
     created_at: '2026-01-15T08:00:00Z',
   },
   {
@@ -45,6 +47,7 @@ const INITIAL_USERS: UserProfile[] = [
     email: 'alex@freelance.io',
     full_name: 'Alex Rivera',
     role: 'user',
+    password: 'password123',
     created_at: '2026-02-10T11:20:00Z',
   },
   {
@@ -52,6 +55,7 @@ const INITIAL_USERS: UserProfile[] = [
     email: 'elena@designcraft.co',
     full_name: 'Elena Rostova',
     role: 'user',
+    password: 'password123',
     created_at: '2026-03-01T14:45:00Z',
   },
 ];
@@ -152,13 +156,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try { return JSON.parse(saved); } catch {}
     }
-    return INITIAL_USERS[1]; // Alex Rivera (Regular User)
+    return INITIAL_USERS[1]; // Default to Alex Rivera
   });
 
   const [users, setUsers] = useState<UserProfile[]>(() => {
     const saved = localStorage.getItem('invoicepulse_users_list');
     if (saved) {
-      try { return JSON.parse(saved); } catch {}
+      try { 
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Merge with initial users to ensure default admin/user are always present
+          const existingIds = new Set(parsed.map((p: any) => p.email.toLowerCase()));
+          const missing = INITIAL_USERS.filter((u) => !existingIds.has(u.email.toLowerCase()));
+          return [...parsed, ...missing];
+        }
+      } catch {}
     }
     return INITIAL_USERS;
   });
@@ -194,7 +206,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('invoicepulse_invoices', JSON.stringify(invoices));
   }, [invoices]);
 
-  // Run initial diagnostic check
+  // Run initial diagnostic check and sync with Supabase automatically on mount
   const runDiagnostics = async (): Promise<DatabaseDiagnostics> => {
     setIsDiagnosticsLoading(true);
     try {
@@ -219,17 +231,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  useEffect(() => {
-    runDiagnostics();
-  }, []);
-
-  // Fetch from Supabase if connected
+  // Fetch from remote Supabase Cloud database
   const syncWithSupabase = async () => {
     const client = getLiveSupabaseClient();
     if (!client) return;
 
     try {
-      // 1. Fetch invoices
+      // 1. Fetch remote invoices from Supabase
       const { data: remoteInvoices, error: invErr } = await client
         .from('invoices')
         .select('*')
@@ -237,15 +245,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (!invErr && remoteInvoices && remoteInvoices.length > 0) {
         setInvoices(remoteInvoices);
+        localStorage.setItem('invoicepulse_invoices', JSON.stringify(remoteInvoices));
       }
 
-      // 2. Fetch profiles
+      // 2. Fetch remote profiles
       const { data: remoteProfiles, error: profErr } = await client
         .from('profiles')
         .select('*');
 
       if (!profErr && remoteProfiles && remoteProfiles.length > 0) {
-        setUsers(remoteProfiles);
+        setUsers((prev) => {
+          const merged = [...prev];
+          remoteProfiles.forEach((rp: any) => {
+            if (!merged.some((m) => m.email.toLowerCase() === rp.email.toLowerCase())) {
+              merged.push(rp);
+            }
+          });
+          return merged;
+        });
       }
 
       await runDiagnostics();
@@ -254,25 +271,112 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const signIn = (email: string, roleOverride?: 'admin' | 'user') => {
-    let matched = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (!matched) {
-      matched = {
-        id: generateUUID(),
-        email,
-        full_name: email.split('@')[0],
-        role: roleOverride || (email.toLowerCase().includes('admin') ? 'admin' : 'user'),
-        created_at: new Date().toISOString(),
-      };
-      setUsers((prev) => [matched!, ...prev]);
+  useEffect(() => {
+    runDiagnostics();
+    syncWithSupabase();
+  }, []);
+
+  // Strict Login: Does NOT create random accounts on wrong password/info!
+  const signIn = (inputIdentifier: string, passwordInput: string): { success: boolean; message?: string } => {
+    const clean = inputIdentifier.trim().toLowerCase();
+    const cleanPass = passwordInput.trim();
+
+    if (!clean) {
+      return { success: false, message: 'Please enter your username or email.' };
     }
+
+    if (!cleanPass) {
+      return { success: false, message: 'Please enter your password.' };
+    }
+
+    // 1. Admin Account check
+    if (clean === 'admin' || clean === 'admin@invoicepulse.dev') {
+      if (cleanPass !== 'admin123') {
+        return { success: false, message: 'Incorrect password for Admin. Please use "admin123".' };
+      }
+      const adminUser = users.find((u) => u.role === 'admin') || INITIAL_USERS[0];
+      setCurrentUser(adminUser);
+      setActiveView('admin');
+      return { success: true };
+    }
+
+    // 2. Default User check ('user' or 'alex')
+    if (clean === 'user' || clean === 'alex' || clean === 'alex@freelance.io') {
+      if (cleanPass !== 'password123' && cleanPass !== 'user123') {
+        return { success: false, message: 'Incorrect password for User. Please use "password123".' };
+      }
+      const regularUser = users.find((u) => u.email === 'alex@freelance.io') || INITIAL_USERS[1];
+      setCurrentUser(regularUser);
+      setActiveView('dashboard');
+      return { success: true };
+    }
+
+    // 3. Registered Account Lookup
+    const matched = users.find((u) => u.email.toLowerCase() === clean);
+    if (!matched) {
+      // PREVENT WRONG INFO ACCOUNT CREATION!
+      return { 
+        success: false, 
+        message: `Account "${inputIdentifier}" does not exist. Click "Create New Account" to register.` 
+      };
+    }
+
+    // Verify Password for custom registered account
+    if (matched.password && matched.password !== cleanPass) {
+      return { success: false, message: 'Incorrect password. Please verify your password.' };
+    }
+
     setCurrentUser(matched);
     if (matched.role === 'admin') {
       setActiveView('admin');
     } else {
       setActiveView('dashboard');
     }
-    return true;
+    return { success: true };
+  };
+
+  // Sign Up: Intentionally creates a new user account
+  const signUp = async (
+    email: string, 
+    passwordInput: string, 
+    fullName: string
+  ): Promise<{ success: boolean; message?: string }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = passwordInput.trim();
+
+    if (!cleanEmail || !cleanPass) {
+      return { success: false, message: 'Email and password are required.' };
+    }
+
+    const existing = users.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      return { success: false, message: `An account with ${cleanEmail} already exists. Please sign in.` };
+    }
+
+    const newUser: UserProfile = {
+      id: generateUUID(),
+      email: cleanEmail,
+      full_name: fullName.trim() || cleanEmail.split('@')[0],
+      role: 'user',
+      password: cleanPass,
+      created_at: new Date().toISOString(),
+    };
+
+    setUsers((prev) => [newUser, ...prev]);
+    setCurrentUser(newUser);
+
+    // Save profile to Supabase database if connected
+    const client = getLiveSupabaseClient();
+    if (client) {
+      try {
+        await client.from('profiles').upsert([newUser]);
+      } catch (e: any) {
+        console.warn('Supabase profile registration note:', e.message);
+      }
+    }
+
+    setActiveView('dashboard');
+    return { success: true };
   };
 
   const signOut = () => {
@@ -312,15 +416,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       created_by_email: currentUser?.email || 'alex@freelance.io',
     };
 
-    // 1. Update local reactive state immediately (Optimistic UI)
+    // 1. Update state immediately
     if (isEdit) {
       setInvoices((prev) => prev.map((inv) => (inv.id === invoiceId ? fullInvoice : inv)));
     } else {
       setInvoices((prev) => [fullInvoice, ...prev]);
     }
 
-    // 2. If Supabase is connected, persist to remote database
-    let remoteStatus = 'Saved locally.';
+    // 2. Persist to Supabase Cloud Database!
+    let remoteStatus = 'Saved in database.';
     if (client) {
       try {
         const payload = {
@@ -347,13 +451,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const { error } = await client.from('invoices').upsert(payload);
         if (error) {
-          console.warn('Supabase remote write error:', error.message);
           remoteStatus = `Saved locally (Supabase write note: ${error.message}).`;
         } else {
-          remoteStatus = 'Synchronized with Supabase database table.';
+          remoteStatus = '✓ Synced & persisted to Supabase database (Cloud).';
         }
       } catch (err: any) {
-        remoteStatus = `Saved locally (Network error: ${err.message}).`;
+        remoteStatus = `Saved locally (Network: ${err.message}).`;
       }
     }
 
@@ -422,6 +525,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       email,
       full_name: fullName,
       role,
+      password: 'password123',
       created_at: new Date().toISOString(),
     };
 
@@ -484,7 +588,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return {
         success: true,
-        message: 'Successfully populated Supabase database with 3 sample profiles and 3 itemized invoices!',
+        message: 'Successfully populated Supabase database with profiles and itemized invoices!',
       };
     } catch (err: any) {
       return { success: false, message: err.message || 'Seeding failed' };
@@ -500,6 +604,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activeView,
         setActiveView,
         signIn,
+        signUp,
         signOut,
         switchPersona,
         createOrUpdateInvoice,
