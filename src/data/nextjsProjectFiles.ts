@@ -1614,51 +1614,50 @@ CREATE TABLE IF NOT EXISTS public.invoices (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 4. Enable Row Level Security (RLS)
+-- 4. Security Definer Helper: Prevents PostgreSQL RLS Infinite Recursion
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'admin'
+  );
+$$;
+
+-- 5. Enable Row Level Security (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 
--- 5. Profiles Policies:
+-- 6. Profiles Policies (Clean & Non-Recursive):
 -- Users can read their own profile
 CREATE POLICY "Users can read own profile"
   ON public.profiles FOR SELECT
   USING (auth.uid() = id);
 
--- Admins can read all profiles
+-- Admins can read all profiles (via security definer helper)
 CREATE POLICY "Admins can read all profiles"
   ON public.profiles FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
-    )
-  );
+  USING (public.is_admin());
 
 -- Admins can update any profile
 CREATE POLICY "Admins can update any profile"
   ON public.profiles FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
-    )
-  );
+  USING (public.is_admin());
 
--- 6. Invoices Policies:
+-- 7. Invoices Policies:
 -- Users can view their own invoices
 CREATE POLICY "Users can view own invoices"
   ON public.invoices FOR SELECT
   USING (auth.uid() = user_id);
 
--- Admins can view ALL invoices
+-- Admins can view ALL invoices across users
 CREATE POLICY "Admins can view all invoices"
   ON public.invoices FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
-    )
-  );
+  USING (public.is_admin());
 
 -- Users can insert their own invoices
 CREATE POLICY "Users can insert own invoices"
@@ -1673,12 +1672,17 @@ CREATE POLICY "Users can update own invoices"
 -- Admins can update any invoice
 CREATE POLICY "Admins can update any invoice"
   ON public.invoices FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
-    )
-  );
+  USING (public.is_admin());
+
+-- Users can delete their own invoices
+CREATE POLICY "Users can delete own invoices"
+  ON public.invoices FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- Admins can delete any invoice
+CREATE POLICY "Admins can delete any invoice"
+  ON public.invoices FOR DELETE
+  USING (public.is_admin());
 
 -- 7. Trigger to automatically create a profile row upon Supabase Auth sign up
 CREATE OR REPLACE FUNCTION public.handle_new_user()

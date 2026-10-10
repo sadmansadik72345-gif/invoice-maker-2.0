@@ -88,7 +88,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({ invoice, o
               </div>
               <div className="flex justify-end gap-3">
                 <span className="text-slate-500">Currency:</span>
-                <span className="font-mono font-medium text-slate-900">USD ($)</span>
+                <span className="font-mono font-medium text-slate-900">{invoice.currency || 'USD'}</span>
               </div>
             </div>
           </div>
@@ -100,8 +100,8 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({ invoice, o
                 <tr className="border-b border-slate-300 text-slate-600">
                   <th className="py-2.5 font-semibold">Item & Description</th>
                   <th className="py-2.5 text-right font-semibold w-16">Qty</th>
-                  <th className="py-2.5 text-right font-semibold w-24">Price</th>
-                  <th className="py-2.5 text-right font-semibold w-28">Amount</th>
+                  <th className="py-2.5 text-right font-semibold w-24">Price ({invoice.currency || '$'})</th>
+                  <th className="py-2.5 text-right font-semibold w-28">Amount ({invoice.currency || '$'})</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -114,10 +114,10 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({ invoice, o
                       {item.quantity}
                     </td>
                     <td className="py-3 text-right font-mono tabular-nums text-slate-700">
-                      ${Number(item.unitPrice).toFixed(2)}
+                      {invoice.currency || '$'} {Number(item.unitPrice).toFixed(2)}
                     </td>
                     <td className="py-3 text-right font-mono tabular-nums font-semibold text-slate-900">
-                      ${Number(item.total).toFixed(2)}
+                      {invoice.currency || '$'} {Number(item.total).toFixed(2)}
                     </td>
                   </tr>
                 ))}
@@ -131,7 +131,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({ invoice, o
               <div className="flex justify-between text-slate-600">
                 <span>Subtotal</span>
                 <span className="font-mono tabular-nums font-medium">
-                  ${Number(invoice.subtotal).toFixed(2)}
+                  {invoice.currency || '$'} {Number(invoice.subtotal).toFixed(2)}
                 </span>
               </div>
 
@@ -139,7 +139,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({ invoice, o
                 <div className="flex justify-between text-slate-600">
                   <span>Discount ({invoice.discount_percent}%)</span>
                   <span className="font-mono tabular-nums text-slate-500">
-                    -${Number(invoice.discount_amount).toFixed(2)}
+                    -{invoice.currency || '$'} {Number(invoice.discount_amount).toFixed(2)}
                   </span>
                 </div>
               )}
@@ -148,7 +148,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({ invoice, o
                 <div className="flex justify-between text-slate-600">
                   <span>Tax ({invoice.tax_percent}%)</span>
                   <span className="font-mono tabular-nums text-slate-500">
-                    +${Number(invoice.tax_amount).toFixed(2)}
+                    +{invoice.currency || '$'} {Number(invoice.tax_amount).toFixed(2)}
                   </span>
                 </div>
               )}
@@ -156,7 +156,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({ invoice, o
               <div className="pt-2 border-t border-slate-900 flex justify-between items-baseline font-bold text-sm text-slate-900">
                 <span>Total Due</span>
                 <span className="font-mono text-base tabular-nums">
-                  ${Number(invoice.total_amount).toFixed(2)}
+                  {invoice.currency || '$'} {Number(invoice.total_amount).toFixed(2)}
                 </span>
               </div>
             </div>

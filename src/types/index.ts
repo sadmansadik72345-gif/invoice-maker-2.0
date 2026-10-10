@@ -18,10 +18,23 @@ export interface InvoiceItem {
 
 export type InvoiceStatus = 'draft' | 'pending' | 'paid' | 'overdue';
 
+export interface DatabaseDiagnostics {
+  connected: boolean;
+  message: string;
+  url: string;
+  hasInvoicesTable: boolean;
+  hasProfilesTable: boolean;
+  rowCountInvoices: number;
+  rowCountProfiles: number;
+  lastCheckedAt?: string;
+  errorDetail?: string;
+}
+
 export interface Invoice {
   id: string;
   user_id: string;
   invoice_number: string;
+  currency?: string;
   client_name: string;
   client_email: string;
   client_address?: string;

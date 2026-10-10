@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { UserProfile, Invoice, InvoiceItem } from '../types';
-import { getLiveSupabaseClient } from '../lib/supabaseClient';
+import { UserProfile, Invoice, InvoiceItem, DatabaseDiagnostics } from '../types';
+import { 
+  getLiveSupabaseClient, 
+  generateUUID, 
+  testSupabaseConnection 
+} from '../lib/supabaseClient';
 
 interface AppContextType {
   currentUser: UserProfile | null;
@@ -10,33 +14,41 @@ interface AppContextType {
   setActiveView: (view: 'dashboard' | 'admin' | 'login' | 'code' | 'schema') => void;
   signIn: (email: string, role?: 'admin' | 'user') => boolean;
   signOut: () => void;
-  createInvoice: (invoice: Omit<Invoice, 'id' | 'created_at'>) => Invoice;
-  updateInvoiceStatus: (id: string, status: 'draft' | 'pending' | 'paid' | 'overdue') => void;
-  deleteInvoice: (id: string) => void;
-  createUserAccount: (email: string, fullName: string, role: 'admin' | 'user') => boolean;
+  switchPersona: (email: string) => void;
+  createOrUpdateInvoice: (invoiceData: Omit<Invoice, 'id' | 'created_at'> & { id?: string }) => Promise<{ success: boolean; invoice: Invoice; message: string }>;
+  updateInvoiceStatus: (id: string, status: 'draft' | 'pending' | 'paid' | 'overdue') => Promise<void>;
+  deleteInvoice: (id: string) => Promise<void>;
+  duplicateInvoice: (invoice: Invoice) => void;
+  editingInvoice: Invoice | null;
+  setEditingInvoice: (inv: Invoice | null) => void;
+  createUserAccount: (email: string, fullName: string, role: 'admin' | 'user') => Promise<{ success: boolean; message: string }>;
   activeInvoiceForPrint: Invoice | null;
   setActiveInvoiceForPrint: (inv: Invoice | null) => void;
-  isLiveSupabaseConnected: boolean;
-  refreshLiveDb: () => Promise<void>;
+  diagnostics: DatabaseDiagnostics | null;
+  isDiagnosticsLoading: boolean;
+  runDiagnostics: () => Promise<DatabaseDiagnostics>;
+  syncWithSupabase: () => Promise<void>;
+  seedDemoDataToSupabase: () => Promise<{ success: boolean; message: string }>;
 }
 
+// Standards-compliant UUIDs for initial users to prevent PostgreSQL UUID cast exceptions
 const INITIAL_USERS: UserProfile[] = [
   {
-    id: 'usr_admin_01',
+    id: 'a0000000-0000-4000-8000-000000000001',
     email: 'admin@invoicepulse.dev',
     full_name: 'Arthur Vance',
     role: 'admin',
     created_at: '2026-01-15T08:00:00Z',
   },
   {
-    id: 'usr_regular_01',
+    id: 'b0000000-0000-4000-8000-000000000002',
     email: 'alex@freelance.io',
     full_name: 'Alex Rivera',
     role: 'user',
     created_at: '2026-02-10T11:20:00Z',
   },
   {
-    id: 'usr_regular_02',
+    id: 'c0000000-0000-4000-8000-000000000003',
     email: 'elena@designcraft.co',
     full_name: 'Elena Rostova',
     role: 'user',
@@ -46,9 +58,10 @@ const INITIAL_USERS: UserProfile[] = [
 
 const INITIAL_INVOICES: Invoice[] = [
   {
-    id: 'inv_001',
-    user_id: 'usr_regular_01',
+    id: 'f1111111-1111-4111-8111-111111111111',
+    user_id: 'b0000000-0000-4000-8000-000000000002',
     invoice_number: 'INV-1001',
+    currency: 'USD',
     client_name: 'Apex Global Logistics',
     client_email: 'finance@apexlogistics.com',
     client_address: '742 Evergreen Terrace, Sector 4\nChicago, IL 60601',
@@ -74,9 +87,10 @@ const INITIAL_INVOICES: Invoice[] = [
     created_by_email: 'alex@freelance.io',
   },
   {
-    id: 'inv_002',
-    user_id: 'usr_regular_01',
+    id: 'f2222222-2222-4222-8222-222222222222',
+    user_id: 'b0000000-0000-4000-8000-000000000002',
     invoice_number: 'INV-1002',
+    currency: 'USD',
     client_name: 'Starlight Media Labs',
     client_email: 'accounts@starlight.io',
     client_address: '100 Broadway, 14th Floor\nNew York, NY 10005',
@@ -101,9 +115,10 @@ const INITIAL_INVOICES: Invoice[] = [
     created_by_email: 'alex@freelance.io',
   },
   {
-    id: 'inv_003',
-    user_id: 'usr_regular_02',
+    id: 'f3333333-3333-4333-8333-333333333333',
+    user_id: 'c0000000-0000-4000-8000-000000000003',
     invoice_number: 'INV-1003',
+    currency: 'EUR',
     client_name: 'Nordic Clean Energy Ltd',
     client_email: 'invoicing@nordic-energy.se',
     client_address: 'Kungsgatan 12, Stockholm, Sweden',
@@ -133,7 +148,6 @@ const AppContext = createContext<AppContextType | null>(null);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    // Default to Alex Rivera (regular user) or restore from localStorage
     const saved = localStorage.getItem('invoicepulse_user');
     if (saved) {
       try { return JSON.parse(saved); } catch {}
@@ -159,9 +173,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [activeView, setActiveView] = useState<'dashboard' | 'admin' | 'login' | 'code' | 'schema'>('dashboard');
   const [activeInvoiceForPrint, setActiveInvoiceForPrint] = useState<Invoice | null>(null);
-  const [isLiveSupabaseConnected, setIsLiveSupabaseConnected] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DatabaseDiagnostics | null>(null);
+  const [isDiagnosticsLoading, setIsDiagnosticsLoading] = useState(false);
 
-  // Sync to local storage
+  // Sync state to local storage
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('invoicepulse_user', JSON.stringify(currentUser));
@@ -178,35 +194,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('invoicepulse_invoices', JSON.stringify(invoices));
   }, [invoices]);
 
-  // Check live Supabase
-  const refreshLiveDb = async () => {
-    const client = getLiveSupabaseClient();
-    if (!client) {
-      setIsLiveSupabaseConnected(false);
-      return;
-    }
+  // Run initial diagnostic check
+  const runDiagnostics = async (): Promise<DatabaseDiagnostics> => {
+    setIsDiagnosticsLoading(true);
     try {
-      const { data, error } = await client.from('invoices').select('*').limit(5);
-      if (!error) {
-        setIsLiveSupabaseConnected(true);
-      } else {
-        setIsLiveSupabaseConnected(false);
-      }
-    } catch {
-      setIsLiveSupabaseConnected(false);
+      const diag = await testSupabaseConnection();
+      setDiagnostics(diag);
+      setIsDiagnosticsLoading(false);
+      return diag;
+    } catch (e: any) {
+      const fallback: DatabaseDiagnostics = {
+        connected: false,
+        message: 'Diagnostics failed: ' + e.message,
+        url: '',
+        hasInvoicesTable: false,
+        hasProfilesTable: false,
+        rowCountInvoices: 0,
+        rowCountProfiles: 0,
+        lastCheckedAt: new Date().toLocaleTimeString(),
+      };
+      setDiagnostics(fallback);
+      setIsDiagnosticsLoading(false);
+      return fallback;
     }
   };
 
   useEffect(() => {
-    refreshLiveDb();
+    runDiagnostics();
   }, []);
+
+  // Fetch from Supabase if connected
+  const syncWithSupabase = async () => {
+    const client = getLiveSupabaseClient();
+    if (!client) return;
+
+    try {
+      // 1. Fetch invoices
+      const { data: remoteInvoices, error: invErr } = await client
+        .from('invoices')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!invErr && remoteInvoices && remoteInvoices.length > 0) {
+        setInvoices(remoteInvoices);
+      }
+
+      // 2. Fetch profiles
+      const { data: remoteProfiles, error: profErr } = await client
+        .from('profiles')
+        .select('*');
+
+      if (!profErr && remoteProfiles && remoteProfiles.length > 0) {
+        setUsers(remoteProfiles);
+      }
+
+      await runDiagnostics();
+    } catch (err) {
+      console.warn('Sync notice:', err);
+    }
+  };
 
   const signIn = (email: string, roleOverride?: 'admin' | 'user') => {
     let matched = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
     if (!matched) {
-      // Auto-create for demo ease
       matched = {
-        id: `usr_${Date.now()}`,
+        id: generateUUID(),
         email,
         full_name: email.split('@')[0],
         role: roleOverride || (email.toLowerCase().includes('admin') ? 'admin' : 'user'),
@@ -228,59 +280,215 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveView('login');
   };
 
-  const createInvoice = (invoiceData: Omit<Invoice, 'id' | 'created_at'>): Invoice => {
-    const newInvoice: Invoice = {
-      ...invoiceData,
-      id: `inv_${Date.now()}`,
-      created_at: new Date().toISOString(),
-      created_by_email: currentUser?.email,
-    };
-
-    setInvoices((prev) => [newInvoice, ...prev]);
-
-    // If live Supabase client exists, attempt background write
-    const client = getLiveSupabaseClient();
-    if (client) {
-      client.from('invoices').insert([newInvoice]).then(({ error }) => {
-        if (error) console.warn('Supabase sync notice:', error.message);
-      });
+  const switchPersona = (email: string) => {
+    const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (user) {
+      setCurrentUser(user);
+      if (user.role === 'admin') {
+        setActiveView('admin');
+      } else {
+        setActiveView('dashboard');
+      }
     }
-
-    return newInvoice;
   };
 
-  const updateInvoiceStatus = (id: string, status: 'draft' | 'pending' | 'paid' | 'overdue') => {
+  const createOrUpdateInvoice = async (
+    invoiceData: Omit<Invoice, 'id' | 'created_at'> & { id?: string }
+  ): Promise<{ success: boolean; invoice: Invoice; message: string }> => {
+    const client = getLiveSupabaseClient();
+    const isEdit = !!invoiceData.id && invoices.some((i) => i.id === invoiceData.id);
+    const invoiceId = invoiceData.id || generateUUID();
+
+    const targetUserId = currentUser?.id || 'b0000000-0000-4000-8000-000000000002';
+
+    const fullInvoice: Invoice = {
+      ...invoiceData,
+      id: invoiceId,
+      user_id: invoiceData.user_id || targetUserId,
+      currency: invoiceData.currency || 'USD',
+      created_at: isEdit
+        ? invoices.find((i) => i.id === invoiceId)?.created_at || new Date().toISOString()
+        : new Date().toISOString(),
+      created_by_email: currentUser?.email || 'alex@freelance.io',
+    };
+
+    // 1. Update local reactive state immediately (Optimistic UI)
+    if (isEdit) {
+      setInvoices((prev) => prev.map((inv) => (inv.id === invoiceId ? fullInvoice : inv)));
+    } else {
+      setInvoices((prev) => [fullInvoice, ...prev]);
+    }
+
+    // 2. If Supabase is connected, persist to remote database
+    let remoteStatus = 'Saved locally.';
+    if (client) {
+      try {
+        const payload = {
+          id: fullInvoice.id,
+          user_id: fullInvoice.user_id,
+          invoice_number: fullInvoice.invoice_number,
+          client_name: fullInvoice.client_name,
+          client_email: fullInvoice.client_email,
+          client_address: fullInvoice.client_address || '',
+          sender_name: fullInvoice.sender_name || '',
+          sender_email: fullInvoice.sender_email || '',
+          issue_date: fullInvoice.issue_date,
+          due_date: fullInvoice.due_date,
+          items: fullInvoice.items,
+          subtotal: fullInvoice.subtotal,
+          tax_percent: fullInvoice.tax_percent,
+          tax_amount: fullInvoice.tax_amount,
+          discount_percent: fullInvoice.discount_percent,
+          discount_amount: fullInvoice.discount_amount,
+          total_amount: fullInvoice.total_amount,
+          status: fullInvoice.status,
+          notes: fullInvoice.notes || '',
+        };
+
+        const { error } = await client.from('invoices').upsert(payload);
+        if (error) {
+          console.warn('Supabase remote write error:', error.message);
+          remoteStatus = `Saved locally (Supabase write note: ${error.message}).`;
+        } else {
+          remoteStatus = 'Synchronized with Supabase database table.';
+        }
+      } catch (err: any) {
+        remoteStatus = `Saved locally (Network error: ${err.message}).`;
+      }
+    }
+
+    return {
+      success: true,
+      invoice: fullInvoice,
+      message: `${isEdit ? 'Updated' : 'Created'} invoice ${fullInvoice.invoice_number}. ${remoteStatus}`,
+    };
+  };
+
+  const updateInvoiceStatus = async (
+    id: string,
+    status: 'draft' | 'pending' | 'paid' | 'overdue'
+  ) => {
     setInvoices((prev) =>
       prev.map((inv) => (inv.id === id ? { ...inv, status } : inv))
     );
     const client = getLiveSupabaseClient();
     if (client) {
-      client.from('invoices').update({ status }).eq('id', id).then();
+      try {
+        await client.from('invoices').update({ status }).eq('id', id);
+      } catch (err) {
+        console.warn('Failed to update remote status:', err);
+      }
     }
   };
 
-  const deleteInvoice = (id: string) => {
+  const deleteInvoice = async (id: string) => {
     setInvoices((prev) => prev.filter((inv) => inv.id !== id));
     const client = getLiveSupabaseClient();
     if (client) {
-      client.from('invoices').delete().eq('id', id).then();
+      try {
+        await client.from('invoices').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Failed to delete remote invoice:', err);
+      }
     }
   };
 
-  const createUserAccount = (email: string, fullName: string, role: 'admin' | 'user'): boolean => {
+  const duplicateInvoice = (invoice: Invoice) => {
+    const clone: Invoice = {
+      ...invoice,
+      id: generateUUID(),
+      invoice_number: `INV-${1000 + invoices.length + 1}`,
+      status: 'pending',
+      issue_date: new Date().toISOString().split('T')[0],
+      due_date: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+    };
+    setInvoices((prev) => [clone, ...prev]);
+    setActiveInvoiceForPrint(clone);
+  };
+
+  const createUserAccount = async (
+    email: string,
+    fullName: string,
+    role: 'admin' | 'user'
+  ): Promise<{ success: boolean; message: string }> => {
     const existing = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
     if (existing) {
-      return false;
+      return { success: false, message: `Account ${email} already exists.` };
     }
+
     const newUser: UserProfile = {
-      id: `usr_${Date.now()}`,
+      id: generateUUID(),
       email,
       full_name: fullName,
       role,
       created_at: new Date().toISOString(),
     };
+
     setUsers((prev) => [newUser, ...prev]);
-    return true;
+
+    const client = getLiveSupabaseClient();
+    if (client) {
+      try {
+        await client.from('profiles').upsert([newUser]);
+      } catch (e: any) {
+        console.warn('Remote profile insert notice:', e.message);
+      }
+    }
+
+    return {
+      success: true,
+      message: `Account created for ${fullName} (${email}) as ${role.toUpperCase()}.`,
+    };
+  };
+
+  const seedDemoDataToSupabase = async (): Promise<{ success: boolean; message: string }> => {
+    const client = getLiveSupabaseClient();
+    if (!client) {
+      return { success: false, message: 'No live Supabase project configured. Please set your URL and Anon Key first.' };
+    }
+
+    try {
+      // Seed profiles
+      const { error: pErr } = await client.from('profiles').upsert(INITIAL_USERS);
+      if (pErr) throw new Error('Profiles table seed failed: ' + pErr.message);
+
+      // Seed invoices
+      const invoicePayloads = INITIAL_INVOICES.map((inv) => ({
+        id: inv.id,
+        user_id: inv.user_id,
+        invoice_number: inv.invoice_number,
+        client_name: inv.client_name,
+        client_email: inv.client_email,
+        client_address: inv.client_address || '',
+        sender_name: inv.sender_name || '',
+        sender_email: inv.sender_email || '',
+        issue_date: inv.issue_date,
+        due_date: inv.due_date,
+        items: inv.items,
+        subtotal: inv.subtotal,
+        tax_percent: inv.tax_percent,
+        tax_amount: inv.tax_amount,
+        discount_percent: inv.discount_percent,
+        discount_amount: inv.discount_amount,
+        total_amount: inv.total_amount,
+        status: inv.status,
+        notes: inv.notes || '',
+      }));
+
+      const { error: iErr } = await client.from('invoices').upsert(invoicePayloads);
+      if (iErr) throw new Error('Invoices table seed failed: ' + iErr.message);
+
+      await runDiagnostics();
+      await syncWithSupabase();
+
+      return {
+        success: true,
+        message: 'Successfully populated Supabase database with 3 sample profiles and 3 itemized invoices!',
+      };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Seeding failed' };
+    }
   };
 
   return (
@@ -293,14 +501,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveView,
         signIn,
         signOut,
-        createInvoice,
+        switchPersona,
+        createOrUpdateInvoice,
         updateInvoiceStatus,
         deleteInvoice,
+        duplicateInvoice,
+        editingInvoice,
+        setEditingInvoice,
         createUserAccount,
         activeInvoiceForPrint,
         setActiveInvoiceForPrint,
-        isLiveSupabaseConnected,
-        refreshLiveDb,
+        diagnostics,
+        isDiagnosticsLoading,
+        runDiagnostics,
+        syncWithSupabase,
+        seedDemoDataToSupabase,
       }}
     >
       {children}

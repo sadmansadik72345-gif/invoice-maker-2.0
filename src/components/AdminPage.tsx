@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Shield, UserPlus, Users, DollarSign, FileText, CheckCircle, 
-  Clock, ArrowLeft, AlertCircle, Check, Search, Lock, UserCheck
+  Clock, ArrowLeft, AlertCircle, Check, Search, Lock, UserCheck, 
+  Printer, ArrowUpRight
 } from 'lucide-react';
 
 export const AdminPage: React.FC = () => {
@@ -13,18 +14,16 @@ export const AdminPage: React.FC = () => {
     createUserAccount, 
     updateInvoiceStatus, 
     setActiveView, 
+    switchPersona,
     setActiveInvoiceForPrint 
   } = useApp();
 
-  // New User Form State
   const [newEmail, setNewEmail] = useState('');
   const [newFullName, setNewFullName] = useState('');
   const [newPassword, setNewPassword] = useState('tempPass#2026');
   const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  // Invoices filter
   const [searchQuery, setSearchQuery] = useState('');
 
   // 1. Role-based protection check: Normal Users vs Admins
@@ -36,18 +35,25 @@ export const AdminPage: React.FC = () => {
         </div>
         <h2 className="text-xl font-bold text-slate-900">Restricted Route: Admin Only</h2>
         <p className="text-xs text-slate-600 mt-2 max-w-md mx-auto">
-          This portal is protected by Supabase RLS and Next.js middleware. It requires{' '}
+          This portal is protected by Supabase RLS policies and Next.js middleware. It strictly requires{' '}
           <code className="px-1.5 py-0.5 rounded bg-slate-100 font-mono text-[11px] font-semibold text-slate-800">
             profiles.role === 'admin'
           </code>.
         </p>
 
-        <div className="mt-6 flex items-center justify-center gap-3">
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
           <button
             onClick={() => setActiveView('dashboard')}
-            className="px-4 py-2 text-xs font-medium rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+            className="w-full sm:w-auto px-4 py-2 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 transition-colors"
           >
             Return to User Dashboard
+          </button>
+          <button
+            onClick={() => switchPersona('admin@invoicepulse.dev')}
+            className="w-full sm:w-auto px-4 py-2 text-xs font-medium rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+          >
+            <Shield className="w-3.5 h-3.5" />
+            Switch to Admin (Arthur Vance)
           </button>
         </div>
       </div>
@@ -55,26 +61,26 @@ export const AdminPage: React.FC = () => {
   }
 
   // Handle Admin User Creation
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEmail || !newFullName) return;
     setIsSubmitting(true);
     setFeedback(null);
 
-    const success = createUserAccount(newEmail, newFullName, newRole);
+    const result = await createUserAccount(newEmail, newFullName, newRole);
     setIsSubmitting(false);
 
-    if (success) {
+    if (result.success) {
       setFeedback({
         type: 'success',
-        message: `User account for ${newEmail} (${newRole}) was created successfully.`,
+        message: result.message,
       });
       setNewEmail('');
       setNewFullName('');
     } else {
       setFeedback({
         type: 'error',
-        message: `A user with email ${newEmail} already exists in Supabase Auth.`,
+        message: result.message,
       });
     }
   };
@@ -113,7 +119,7 @@ export const AdminPage: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Role-protected administrative panel: User provisioning & global invoice ledger
+              Role-protected administrative panel: User provisioning & cross-tenant invoice ledger
             </p>
           </div>
         </div>
@@ -135,7 +141,7 @@ export const AdminPage: React.FC = () => {
             ${totalRevenue.toFixed(2)}
           </div>
           <span className="text-[11px] text-emerald-600 font-medium mt-1 inline-block">
-            Across all tenant accounts
+            Settled invoices across users
           </span>
         </div>
 
@@ -145,7 +151,7 @@ export const AdminPage: React.FC = () => {
             ${pendingRevenue.toFixed(2)}
           </div>
           <span className="text-[11px] text-amber-600 font-medium mt-1 inline-block">
-            Awaiting client settlement
+            Awaiting client remittance
           </span>
         </div>
 
@@ -155,7 +161,7 @@ export const AdminPage: React.FC = () => {
             {invoices.length}
           </div>
           <span className="text-[11px] text-slate-500 font-medium mt-1 inline-block">
-            Total invoices generated
+            Generated across all tenants
           </span>
         </div>
 
@@ -165,12 +171,12 @@ export const AdminPage: React.FC = () => {
             {users.length}
           </div>
           <span className="text-[11px] text-slate-500 font-medium mt-1 inline-block">
-            In profiles table
+            Profiles in PostgreSQL
           </span>
         </div>
       </div>
 
-      {/* 2-Column Split: User Creator & User Directory */}
+      {/* 2-Column Split: User Creator & Directory */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Form: Admin User Creator (5 cols) */}
         <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
@@ -254,7 +260,7 @@ export const AdminPage: React.FC = () => {
               className="w-full mt-2 py-2.5 px-4 rounded-xl bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 disabled:opacity-60 transition-colors shadow-xs flex items-center justify-center gap-2"
             >
               <UserPlus className="w-3.5 h-3.5" />
-              <span>Create User Account</span>
+              <span>{isSubmitting ? 'Creating account...' : 'Create User Account'}</span>
             </button>
           </form>
         </div>
@@ -278,6 +284,7 @@ export const AdminPage: React.FC = () => {
                   <th className="py-2.5 px-4 font-semibold">User</th>
                   <th className="py-2.5 px-4 font-semibold">Role</th>
                   <th className="py-2.5 px-4 font-semibold text-right">Invoices</th>
+                  <th className="py-2.5 px-4 font-semibold text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -302,6 +309,14 @@ export const AdminPage: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-right font-mono tabular-nums text-slate-700">
                         {count} invoices
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => switchPersona(u.email)}
+                          className="text-[11px] text-slate-600 hover:text-slate-900 font-medium px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 transition-colors"
+                        >
+                          Switch
+                        </button>
                       </td>
                     </tr>
                   );
@@ -369,7 +384,7 @@ export const AdminPage: React.FC = () => {
                     {inv.items?.length || 0}
                   </td>
                   <td className="py-3 px-4 text-right font-mono font-bold text-slate-900 tabular-nums">
-                    ${Number(inv.total_amount).toFixed(2)}
+                    {inv.currency || '$'} {Number(inv.total_amount).toFixed(2)}
                   </td>
                   <td className="py-3 px-4 text-center">
                     <button
@@ -392,7 +407,7 @@ export const AdminPage: React.FC = () => {
                       className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
                       title="Inspect and Print"
                     >
-                      <FileText className="w-3.5 h-3.5" />
+                      <Printer className="w-3.5 h-3.5" />
                     </button>
                   </td>
                 </tr>
