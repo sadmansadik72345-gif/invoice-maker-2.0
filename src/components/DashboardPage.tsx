@@ -286,47 +286,43 @@ export const DashboardPage: React.FC = () => {
       {/* Tab 1: Create / Edit Invoice */}
       {activeTab === 'create' && (
         <div className="space-y-6">
-          {/* Quick Preset Templates Bar (Eliminates the typing design loop) */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-purple-600" />
-              <span className="text-xs font-semibold text-slate-800">Quick Industry Templates:</span>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {PRESET_TEMPLATES.map((tmpl) => (
-                <button
-                  key={tmpl.name}
-                  type="button"
-                  onClick={() => handleApplyTemplate(tmpl)}
-                  className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 transition-colors"
-                >
-                  {tmpl.name}
-                </button>
-              ))}
-              {editingId && (
-                <button
-                  type="button"
-                  onClick={handleResetForm}
-                  className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 flex items-center gap-1"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  Reset to Blank
-                </button>
-              )}
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Editor (8 cols) */}
             <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    {editingId ? 'Modify Saved Invoice' : 'New Invoice Draft'}
+                    {editingId ? 'Modify Saved Invoice' : 'New Invoice'}
                   </span>
                   <div className="text-base font-bold text-slate-900 mt-0.5">
                     Client & Invoice Details
                   </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    onChange={(e) => {
+                      const found = PRESET_TEMPLATES.find((t) => t.name === e.target.value);
+                      if (found) handleApplyTemplate(found);
+                    }}
+                    className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50 text-slate-700 focus:outline-none"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Load Template...</option>
+                    {PRESET_TEMPLATES.map((t) => (
+                      <option key={t.name} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+
+                  {editingId && (
+                    <button
+                      type="button"
+                      onClick={handleResetForm}
+                      className="px-2 py-1 text-xs text-slate-500 hover:text-slate-900 rounded bg-slate-100"
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3">
