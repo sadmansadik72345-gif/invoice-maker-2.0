@@ -1,0 +1,6 @@
+{
+  "name": "InvoicePulse - Next.js 14 Supabase Invoice Maker",
+  "description": "Production-grade Next.js 14 and Supabase Simple Invoice Maker with role-based auth, dynamic invoice builder, admin user management, and print layout.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
