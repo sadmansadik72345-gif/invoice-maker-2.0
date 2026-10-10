@@ -43,11 +43,11 @@ export const NEXTJS_PROJECT_FILES: NextJsFile[] = [
     category: 'config',
     description: 'Environment variables for Supabase Auth, DB, and Admin API',
     content: `# Supabase Public Configuration (Exposed to Browser)
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+NEXT_PUBLIC_SUPABASE_URL=https://icosoivejqnxpexkaijx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imljb3NvaXZlanFueHBleGthaWp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MDI2MDcsImV4cCI6MjEwNzE3ODYwN30.C4JkXbB7tc__q0qgJD7yLbA5KwTimukjx4IK77aJHEA
 
 # Supabase Service Role Key (Keep Secret! Used ONLY in Server Actions / Admin API routes)
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key-here
 
 # App URL for OAuth Callbacks & Redirections
 NEXT_PUBLIC_SITE_URL=http://localhost:3000`

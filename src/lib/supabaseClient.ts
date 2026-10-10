@@ -4,6 +4,9 @@ import { DatabaseDiagnostics, Invoice } from '../types';
 const STORAGE_KEY_URL = 'invoicepulse_supabase_url';
 const STORAGE_KEY_ANON = 'invoicepulse_supabase_anon';
 
+export const DEFAULT_SUPABASE_URL = 'https://icosoivejqnxpexkaijx.supabase.co';
+export const DEFAULT_SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imljb3NvaXZlanFueHBleGthaWp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MDI2MDcsImV4cCI6MjEwNzE3ODYwN30.C4JkXbB7tc__q0qgJD7yLbA5KwTimukjx4IK77aJHEA';
+
 // Robust RFC4122 v4 UUID generator for safe PostgreSQL UUID primary keys
 export function generateUUID(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -17,10 +20,12 @@ export function generateUUID(): string {
 }
 
 export function getStoredSupabaseConfig() {
-  if (typeof window === 'undefined') return { url: '', anonKey: '' };
+  if (typeof window === 'undefined') return { url: DEFAULT_SUPABASE_URL, anonKey: DEFAULT_SUPABASE_ANON };
+  const storedUrl = localStorage.getItem(STORAGE_KEY_URL);
+  const storedAnon = localStorage.getItem(STORAGE_KEY_ANON);
   return {
-    url: localStorage.getItem(STORAGE_KEY_URL) || (import.meta as any).env?.VITE_SUPABASE_URL || '',
-    anonKey: localStorage.getItem(STORAGE_KEY_ANON) || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '',
+    url: storedUrl !== null ? storedUrl : ((import.meta as any).env?.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL),
+    anonKey: storedAnon !== null ? storedAnon : ((import.meta as any).env?.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON),
   };
 }
 
